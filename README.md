@@ -7,6 +7,7 @@ automatisch die verbleibenden Liter berechnet.
 
 ![Preview](preview.png)
 
+
 ## Voraussetzung
 
 Ein Sensor in Home Assistant, der den Füllstand in **cm** liefert
