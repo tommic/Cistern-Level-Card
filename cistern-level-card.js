@@ -131,33 +131,42 @@ class CisternLevelCard extends HTMLElement {
           right: 0;
           bottom: 0;
           height: 0%;
-          overflow: hidden;
-          background: var(--water-color, #1e88e5);
           transition: height 1.2s ease-in-out;
+        }
+        .fill.empty .waves { display: none; }
+        .water {
+          position: absolute;
+          inset: 0;
+          background: var(--water-color, #1e88e5);
+        }
+        .waves {
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: -11px;
+          height: 12px;
+          pointer-events: none;
         }
         .wave {
           position: absolute;
-          left: 50%;
-          top: -100px;
-          width: 340px;
-          height: 340px;
-          margin-left: -170px;
-          border-radius: 44% 46% 43% 47% / 48% 44% 46% 42%;
-          background: var(--water-color-light, #4fa8f0);
-          opacity: 0.55;
-          animation: rotateWave 18s linear infinite;
-          transform-origin: 50% 50%;
+          left: 0;
+          bottom: 0;
+          width: 200%;
+          height: 100%;
+          animation: waveMove 6s linear infinite;
         }
-        .wave.wave-2 {
-          top: -104px;
-          opacity: 0.35;
-          animation-duration: 24s;
+        .wave path { fill: var(--water-color, #1e88e5); }
+        .wave.wave-back {
+          height: 100%;
+          bottom: 1px;
+          opacity: 0.5;
+          animation-duration: 9s;
           animation-direction: reverse;
-          border-radius: 47% 43% 48% 42% / 42% 47% 43% 48%;
         }
-        @keyframes rotateWave {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
+        .wave.wave-back path { fill: var(--water-color-light, #4fa8f0); }
+        @keyframes waveMove {
+          from { transform: translateX(0); }
+          to   { transform: translateX(-50%); }
         }
         @media (prefers-reduced-motion: reduce) {
           .wave { animation: none; }
@@ -210,9 +219,12 @@ class CisternLevelCard extends HTMLElement {
         </div>
         <div class="body">
           <div class="tank-wrap">
-            <div class="fill">
-              <div class="wave"></div>
-              <div class="wave wave-2"></div>
+            <div class="fill empty">
+              <div class="water"></div>
+              <div class="waves">
+                <svg class="wave wave-back" viewBox="0 0 192 12" preserveAspectRatio="none"><path d="M0 6 Q24 0 48 6 T96 6 T144 6 T192 6 V12 H0 Z"/></svg>
+                <svg class="wave" viewBox="0 0 192 12" preserveAspectRatio="none"><path d="M0 6 Q24 12 48 6 T96 6 T144 6 T192 6 V12 H0 Z"/></svg>
+              </div>
             </div>
             <div class="scale"></div>
           </div>
@@ -306,6 +318,7 @@ class CisternLevelCard extends HTMLElement {
     if (this._lastPercent === clamped) return;
     this._lastPercent = clamped;
     this._els.fill.style.height = `${clamped}%`;
+    this._els.fill.classList.toggle("empty", clamped <= 0);
   }
 }
 
