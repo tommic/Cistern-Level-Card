@@ -15,7 +15,67 @@
  * show_liters: true
  */
 
-const CARD_VERSION = "1.3.0";
+const CARD_VERSION = "1.4.0";
+
+const TRANSLATIONS = {
+  de: {
+    entity_required: "Bitte eine 'entity' angeben (Sensor mit Füllstand).",
+    entity_not_found: "Entität {entity} nicht gefunden",
+    sensor_unavailable: "Sensor nicht verfügbar",
+    liters_of: "{liters} L von {max} L",
+    level_info: "Füllstand: {level} {unit} (max. {max} {unit})",
+    "editor.entity": "Entität (Füllstand-Sensor) *",
+    "editor.name": "Name",
+    "editor.max_height_cm": "Max. Höhe (cm) *",
+    "editor.min_height_cm": "Min./Totpunkt Höhe (cm)",
+    "editor.max_volume_l": "Max. Volumen (Liter)",
+    "editor.decimals": "Nachkommastellen (Liter)",
+    "editor.unit_source": "Einheit des Sensors",
+    "editor.water_color": "Wasserfarbe",
+    "editor.water_color_light": "Wellenfarbe (hell)",
+    "editor.icon": "Icon",
+    "editor.show_percentage": "Prozent anzeigen",
+    "editor.show_liters": "Liter anzeigen",
+  },
+  en: {
+    entity_required: "Please set an 'entity' (level sensor).",
+    entity_not_found: "Entity {entity} not found",
+    sensor_unavailable: "Sensor unavailable",
+    liters_of: "{liters} L of {max} L",
+    level_info: "Level: {level} {unit} (max. {max} {unit})",
+    "editor.entity": "Entity (level sensor) *",
+    "editor.name": "Name",
+    "editor.max_height_cm": "Max. height (cm) *",
+    "editor.min_height_cm": "Min./dead space height (cm)",
+    "editor.max_volume_l": "Max. volume (litres)",
+    "editor.decimals": "Decimals (litres)",
+    "editor.unit_source": "Sensor unit",
+    "editor.water_color": "Water colour",
+    "editor.water_color_light": "Wave colour (light)",
+    "editor.icon": "Icon",
+    "editor.show_percentage": "Show percentage",
+    "editor.show_liters": "Show litres",
+  },
+};
+
+// Sprache aus Home Assistant (hass.locale) übernehmen; Fallback: Browser, dann Englisch.
+function resolveLocale(hass) {
+  return hass?.locale?.language || hass?.language || navigator.language || "en";
+}
+
+function translate(locale, key, vars = {}) {
+  const lang = String(locale).toLowerCase().startsWith("de") ? "de" : "en";
+  const text = TRANSLATIONS[lang][key] ?? TRANSLATIONS.en[key] ?? key;
+  return text.replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? "");
+}
+
+function formatNumber(locale, value, options) {
+  try {
+    return value.toLocaleString(locale, options);
+  } catch (e) {
+    return value.toLocaleString("en", options);
+  }
+}
 
 class CisternLevelCard extends HTMLElement {
   static getConfigElement() {
@@ -39,7 +99,7 @@ class CisternLevelCard extends HTMLElement {
 
   setConfig(config) {
     if (!config.entity) {
-      throw new Error("Bitte eine 'entity' angeben (Sensor mit Füllstand in cm).");
+      throw new Error(translate(resolveLocale(this._hass), "entity_required"));
     }
     this._config = {
       name: config.name || "",
@@ -259,6 +319,10 @@ class CisternLevelCard extends HTMLElement {
     this._els.card.addEventListener("click", () => this._showHistory());
   }
 
+  _t(key, vars) {
+    return translate(resolveLocale(this._hass), key, vars);
+  }
+
   _updateContent() {
     if (!this._config || !this._hass || !this._els) return;
     const cfg = this._config;
@@ -276,8 +340,8 @@ class CisternLevelCard extends HTMLElement {
     if (!stateObj || stateObj.state === "unavailable" || stateObj.state === "unknown") {
       this._els.unavailable.style.display = "block";
       this._els.unavailable.textContent = !stateObj
-        ? `Entität ${cfg.entity} nicht gefunden`
-        : "Sensor nicht verfügbar";
+        ? this._t("entity_not_found", { entity: cfg.entity })
+        : this._t("sensor_unavailable");
       this._els.percentage.textContent = "–";
       this._els.liters.textContent = "";
       this._els.heightInfo.textContent = "";
@@ -286,6 +350,7 @@ class CisternLevelCard extends HTMLElement {
     }
     this._els.unavailable.style.display = "none";
 
+    const loc = resolveLocale(this._hass);
     const rawLevel = parseFloat(stateObj.state);
     const minH = cfg.min_height_cm;
     const maxH = cfg.max_height_cm;
@@ -296,25 +361,28 @@ class CisternLevelCard extends HTMLElement {
     this._setFillPercent(percent);
 
     if (cfg.show_percentage) {
-      this._els.percentage.textContent = `${percent.toLocaleString("de-DE", {
+      this._els.percentage.textContent = `${formatNumber(loc, percent, {
         maximumFractionDigits: 1,
       })} %`;
     } else {
-      this._els.percentage.textContent = `${rawLevel.toLocaleString("de-DE")} ${cfg.unit_source}`;
+      this._els.percentage.textContent = `${formatNumber(loc, rawLevel)} ${cfg.unit_source}`;
     }
 
     if (cfg.show_liters && cfg.max_volume_l) {
       const liters = (percent / 100) * cfg.max_volume_l;
-      this._els.liters.textContent = `${liters.toLocaleString("de-DE", {
-        maximumFractionDigits: cfg.decimals,
-      })} L von ${cfg.max_volume_l.toLocaleString("de-DE")} L`;
+      this._els.liters.textContent = this._t("liters_of", {
+        liters: formatNumber(loc, liters, { maximumFractionDigits: cfg.decimals }),
+        max: formatNumber(loc, cfg.max_volume_l),
+      });
     } else {
       this._els.liters.textContent = "";
     }
 
-    this._els.heightInfo.textContent = `Füllstand: ${rawLevel.toLocaleString("de-DE")} ${
-      cfg.unit_source
-    } (max. ${maxH} ${cfg.unit_source})`;
+    this._els.heightInfo.textContent = this._t("level_info", {
+      level: formatNumber(loc, rawLevel),
+      max: formatNumber(loc, maxH),
+      unit: cfg.unit_source,
+    });
   }
 
   _showHistory() {
@@ -338,17 +406,17 @@ class CisternLevelCard extends HTMLElement {
 }
 
 const EDITOR_FIELDS = [
-  { key: "name", label: "Name", type: "text", placeholder: "Zisterne" },
-  { key: "max_height_cm", label: "Max. Höhe (cm) *", type: "number", row: "heights", def: 200 },
-  { key: "min_height_cm", label: "Min./Totpunkt Höhe (cm)", type: "number", row: "heights", def: 0 },
-  { key: "max_volume_l", label: "Max. Volumen (Liter)", type: "number", placeholder: "6000" },
-  { key: "decimals", label: "Nachkommastellen (Liter)", type: "number", row: "display", def: 0 },
-  { key: "unit_source", label: "Einheit des Sensors", type: "text", row: "display", def: "cm" },
-  { key: "water_color", label: "Wasserfarbe", type: "color", row: "colors", def: "#1e88e5" },
-  { key: "water_color_light", label: "Wellenfarbe (hell)", type: "color", row: "colors", def: "#4fa8f0" },
-  { key: "icon", label: "Icon", type: "text", def: "mdi:waves" },
-  { key: "show_percentage", label: "Prozent anzeigen", type: "checkbox", def: true },
-  { key: "show_liters", label: "Liter anzeigen", type: "checkbox", def: true },
+  { key: "name", type: "text", placeholder: "Zisterne" },
+  { key: "max_height_cm", type: "number", row: "heights", def: 200 },
+  { key: "min_height_cm", type: "number", row: "heights", def: 0 },
+  { key: "max_volume_l", type: "number", placeholder: "6000" },
+  { key: "decimals", type: "number", row: "display", def: 0 },
+  { key: "unit_source", type: "text", row: "display", def: "cm" },
+  { key: "water_color", type: "color", row: "colors", def: "#1e88e5" },
+  { key: "water_color_light", type: "color", row: "colors", def: "#4fa8f0" },
+  { key: "icon", type: "text", def: "mdi:waves" },
+  { key: "show_percentage", type: "checkbox", def: true },
+  { key: "show_liters", type: "checkbox", def: true },
 ];
 
 class CisternLevelCardEditor extends HTMLElement {
@@ -358,10 +426,18 @@ class CisternLevelCardEditor extends HTMLElement {
   }
 
   set hass(hass) {
+    const firstTime = !this._hass;
     this._hass = hass;
     if (this._entityPicker) {
       this._entityPicker.hass = hass;
     }
+    if (firstTime && this._config) {
+      this._render();
+    }
+  }
+
+  _t(key) {
+    return translate(resolveLocale(this._hass), key);
   }
 
   _render() {
@@ -386,7 +462,7 @@ class CisternLevelCardEditor extends HTMLElement {
       </style>
       <div class="editor">
         <div class="row">
-          <label>Entität (Füllstand-Sensor) *</label>
+          <label>${this._t("editor.entity")}</label>
           <ha-entity-picker id="entity"></ha-entity-picker>
         </div>
         <div id="fields"></div>
@@ -423,7 +499,7 @@ class CisternLevelCardEditor extends HTMLElement {
     const row = document.createElement("div");
     row.className = "row" + (field.type === "checkbox" ? " checkbox-row" : "");
     const label = document.createElement("label");
-    label.textContent = field.label;
+    label.textContent = this._t(`editor.${field.key}`);
     const input = document.createElement("input");
     input.type = field.type;
     if (field.placeholder) input.placeholder = field.placeholder;
