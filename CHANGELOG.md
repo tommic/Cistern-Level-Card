@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.5.3
+- Editor: Einstellung für den Verbrauchs-Rückblick verständlicher beschriftet, mit Hinweistext
+
 ## 1.5.2
 - Verbrauch und Reichweite: Messrauschen des Sensors wird nicht mehr als Verbrauch gezählt (Stundenwerte per Median, Schwelle für Abnahmen)
 
