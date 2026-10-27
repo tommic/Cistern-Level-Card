@@ -15,7 +15,7 @@
  * show_liters: true
  */
 
-const CARD_VERSION = "1.5.0";
+const CARD_VERSION = "1.5.1";
 
 const HISTORY_REFRESH_MS = 10 * 60 * 1000;
 
@@ -70,6 +70,21 @@ const TRANSLATIONS = {
   },
 };
 
+// Hellere Wellenfarbe aus der Wasserfarbe ableiten, wenn keine explizit gesetzt ist.
+function lightenColor(color) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(color).trim());
+  if (!m) return `color-mix(in srgb, ${color} 65%, white)`;
+  let hex = m[1];
+  if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+  const mixed = [0, 2, 4].map((i) => {
+    const v = parseInt(hex.slice(i, i + 2), 16);
+    return Math.round(v + (255 - v) * 0.35)
+      .toString(16)
+      .padStart(2, "0");
+  });
+  return `#${mixed.join("")}`;
+}
+
 // Sprache aus Home Assistant (hass.locale) übernehmen; Fallback: Browser, dann Englisch.
 function resolveLocale(hass) {
   return hass?.locale?.language || hass?.language || navigator.language || "en";
@@ -120,7 +135,6 @@ class CisternLevelCard extends HTMLElement {
       max_volume_l: config.max_volume_l != null ? Number(config.max_volume_l) : null,
       decimals: config.decimals != null ? Number(config.decimals) : 0,
       water_color: config.water_color || "#1e88e5",
-      water_color_light: config.water_color_light || "#4fa8f0",
       show_liters: config.show_liters !== false,
       show_percentage: config.show_percentage !== false,
       show_history: config.show_history !== false,
@@ -360,7 +374,10 @@ class CisternLevelCard extends HTMLElement {
     this._els.icon.setAttribute("icon", cfg.icon);
     this._els.name.textContent = cfg.name || stateObj?.attributes?.friendly_name || cfg.entity;
     this._els.tankWrap.style.setProperty("--water-color", cfg.water_color);
-    this._els.tankWrap.style.setProperty("--water-color-light", cfg.water_color_light);
+    this._els.tankWrap.style.setProperty(
+      "--water-color-light",
+      cfg.water_color_light || lightenColor(cfg.water_color)
+    );
     this.shadowRoot.querySelector(".header ha-icon").style.setProperty(
       "--water-color",
       cfg.water_color
@@ -548,7 +565,7 @@ const EDITOR_FIELDS = [
   { key: "decimals", type: "number", row: "display", def: 0 },
   { key: "unit_source", type: "text", row: "display", def: "cm" },
   { key: "water_color", type: "color", row: "colors", def: "#1e88e5" },
-  { key: "water_color_light", type: "color", row: "colors", def: "#4fa8f0" },
+  { key: "water_color_light", type: "color", row: "colors" },
   { key: "icon", type: "text", def: "mdi:waves" },
   { key: "show_percentage", type: "checkbox", def: true },
   { key: "show_liters", type: "checkbox", def: true },
@@ -632,6 +649,11 @@ class CisternLevelCardEditor extends HTMLElement {
     });
   }
 
+  _derivedLight(waterColor) {
+    const light = lightenColor(waterColor || "#1e88e5");
+    return /^#[0-9a-f]{6}$/i.test(light) ? light : "#4fa8f0";
+  }
+
   _buildField(field, cfg) {
     const row = document.createElement("div");
     row.className = "row" + (field.type === "checkbox" ? " checkbox-row" : "");
@@ -649,14 +671,24 @@ class CisternLevelCardEditor extends HTMLElement {
       return row;
     }
 
-    input.value = current ?? field.def ?? "";
+    let initial = current ?? field.def ?? "";
+    if (field.key === "water_color_light" && current === undefined) {
+      initial = this._derivedLight(cfg.water_color);
+    }
+    input.value = initial;
     input.addEventListener("change", () => {
       let value = input.value;
       if (field.type === "number") {
         value = value === "" ? undefined : Number(value);
       }
       this._updateConfig(field.key, value);
+      // Ohne eigene Wellenfarbe folgt die Anzeige der neuen Wasserfarbe
+      if (field.key === "water_color" && this._config.water_color_light === undefined) {
+        const light = this.shadowRoot.getElementById("field-water_color_light");
+        if (light) light.value = this._derivedLight(value);
+      }
     });
+    input.id = `field-${field.key}`;
     row.append(label, input);
     return row;
   }

@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.5.1
+- Wellenfarbe wird automatisch aus der Wasserfarbe abgeleitet, solange keine eigene gesetzt ist (vorher blieb sie blau)
+
 ## 1.5.0
 - Verbrauch (pro Tag), Reichweite in Tagen und Min/Max aus dem Verlauf der Entität
 - Neue Optionen `show_history` und `history_hours`
