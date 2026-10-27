@@ -1,14 +1,21 @@
 name: Release
 
+# Legt automatisch ein GitHub-Release an, sobald auf main eine neue
+# CARD_VERSION in cistern-level-card.js steht. HACS zeigt dann diese Version an.
+# Zusätzlich manuell startbar (Tag optional) oder per Tag-Push.
 on:
   push:
+    branches:
+      - main
+    paths:
+      - cistern-level-card.js
     tags:
       - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Versions-Tag, z. B. v1.2.0 (wird auf dem gewählten Branch erstellt)"
-        required: true
+        description: "Versions-Tag, z. B. v1.5.1 (leer = CARD_VERSION aus der Datei)"
+        required: false
 
 permissions:
   contents: write
@@ -18,10 +25,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: GitHub Release erstellen
+      - name: Release erstellen, falls für diese Version noch keins existiert
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
+          VERSION=$(grep -oP 'CARD_VERSION = "\K[^"]+' cistern-level-card.js)
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"
+          else
+            TAG="v$VERSION"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG existiert bereits, nichts zu tun."
+            exit 0
+          fi
           gh release create "$TAG" cistern-level-card.js \
             --title "$TAG" --generate-notes --target "$GITHUB_SHA"
