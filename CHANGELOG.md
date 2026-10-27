@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.0
+- Skala (25/50/75 %) am Tank, abschaltbar mit `show_scale`
+- Größe des Tanks einstellbar (`tank_height`, `tank_width` in px)
+- Warnstufe: `low_level_percent` und `low_level_color` färben Wasser und Prozentanzeige und blenden "Füllstand niedrig" ein
+
 ## 1.5.3
 - Editor: Einstellung für den Verbrauchs-Rückblick verständlicher beschriftet, mit Hinweistext
 

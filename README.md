@@ -34,6 +34,11 @@ water_color: "#1e88e5"
 # water_color_light: "#4fa8f0"   # optional, sonst automatisch aus water_color
 show_liters: true
 show_percentage: true
+show_scale: true
+tank_height: 200
+tank_width: 96
+low_level_percent: 15
+low_level_color: "#e53935"
 icon: mdi:waves
 ```
 
@@ -47,6 +52,10 @@ icon: mdi:waves
 | `decimals` | nein | 0 | Nachkommastellen bei der Liter-Anzeige |
 | `water_color` / `water_color_light` | nein | Blau / automatisch heller | Wasserfarbe; die Wellenfarbe wird aus `water_color` abgeleitet, wenn nicht gesetzt |
 | `show_liters` / `show_percentage` | nein | true | Anzeige ein-/ausblenden |
+| `show_scale` | nein | true | Skala (25/50/75 %) am Tank anzeigen |
+| `tank_height` / `tank_width` | nein | 200 / 96 | Größe des Tanks in Pixel |
+| `low_level_percent` | nein | – | Unterhalb dieses Füllstands (%) wird gewarnt: Wasser und Prozentanzeige in `low_level_color`, dazu der Text "Füllstand niedrig" |
+| `low_level_color` | nein | #e53935 | Warnfarbe |
 | `icon` | nein | mdi:waves | Kopfzeilen-Icon |
 
 ## Wichtiger Hinweis zur Liter-Berechnung
