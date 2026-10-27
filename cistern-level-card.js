@@ -15,7 +15,7 @@
  * show_liters: true
  */
 
-const CARD_VERSION = "1.5.1";
+const CARD_VERSION = "1.5.2";
 
 const HISTORY_REFRESH_MS = 10 * 60 * 1000;
 
@@ -94,6 +94,13 @@ function translate(locale, key, vars = {}) {
   const lang = String(locale).toLowerCase().startsWith("de") ? "de" : "en";
   const text = TRANSLATIONS[lang][key] ?? TRANSLATIONS.en[key] ?? key;
   return text.replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? "");
+}
+
+// Zeitpunkt (ms) eines Verlaufseintrags; NaN, wenn keiner vorhanden ist.
+function historyTime(entry) {
+  const raw = entry.lu ?? entry.lc ?? entry.last_updated ?? entry.last_changed;
+  if (typeof raw === "number") return raw < 1e12 ? raw * 1000 : raw;
+  return raw ? Date.parse(raw) : NaN;
 }
 
 function formatNumber(locale, value, options) {
@@ -474,6 +481,10 @@ class CisternLevelCard extends HTMLElement {
   }
 
   // Füllstand in Liter (bzw. Prozent ohne Volumen) aus den Verlaufspunkten.
+  // Das Messrauschen (Sensor springt ständig um 1 Einheit) darf nicht als Verbrauch
+  // zählen: Der Verlauf wird deshalb auf Stundenwerte (Median) geglättet, und nur
+  // Abnahmen ab einer Mindestgröße werden als Verbrauch gewertet. Zuflüsse (Regen,
+  // Nachfüllen) werden nicht gegengerechnet.
   _computeHistoryStats() {
     const cfg = this._config;
     const usable = Math.max(cfg.max_height_cm - cfg.min_height_cm, 0.0001);
@@ -481,28 +492,58 @@ class CisternLevelCard extends HTMLElement {
       const pct = Math.min(Math.max(raw - cfg.min_height_cm, 0), usable) / usable;
       return cfg.max_volume_l ? pct * cfg.max_volume_l : pct * 100;
     };
-    const values = (this._history || [])
-      .map((e) => parseFloat(e.s ?? e.state))
-      .filter((v) => !isNaN(v))
-      .map(toUnit);
-    if (values.length < 2) return null;
-    // Rauschen unterdrücken: Verbrauch nur aus Abnahmen über einer kleinen Schwelle,
-    // Zuflüsse (Regen, Nachfüllen) werden nicht gegengerechnet.
+    const HOUR = 3600 * 1000;
+    const end = Date.now();
+    const start = end - cfg.history_hours * HOUR;
+
+    const points = (this._history || [])
+      .map((e) => ({ t: historyTime(e), v: parseFloat(e.s ?? e.state) }))
+      .filter((p) => !isNaN(p.v));
+    if (!points.length) return null;
+    if (points.some((p) => isNaN(p.t))) {
+      // Ohne Zeitstempel: gleichmäßig über den Zeitraum verteilen
+      points.forEach((p, i) => (p.t = start + ((i + 0.5) / points.length) * (end - start)));
+    }
+    points.sort((x, y) => x.t - y.t);
+    points.forEach((p) => (p.v = toUnit(p.v)));
+
+    // Stundenwerte: Median aus dem zuletzt bekannten Wert und allen Werten der Stunde
+    const median = (arr) => {
+      const sorted = [...arr].sort((x, y) => x - y);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    };
+    const buckets = Math.max(Math.ceil(cfg.history_hours), 1);
+    const hourly = [];
+    let idx = 0;
+    let carry = points[0].v;
+    for (let i = 0; i < buckets; i++) {
+      const from = start + i * HOUR;
+      const to = from + HOUR;
+      while (idx < points.length && points[idx].t < from) carry = points[idx++].v;
+      const values = [carry];
+      for (let j = idx; j < points.length && points[j].t < to; j++) values.push(points[j].v);
+      hourly.push(median(values));
+    }
+    // Zusätzlich über 3 Stunden glätten
+    const smooth = hourly.map((_, i) =>
+      median(hourly.slice(Math.max(i - 1, 0), Math.min(i + 2, hourly.length)))
+    );
+
+    // Verbrauch: Abnahmen zählen, sobald sie größer als die Rauschschwelle sind
     const range = cfg.max_volume_l || 100;
-    const threshold = range * 0.002;
+    const threshold = range * 0.015;
     let used = 0;
-    let ref = values[0];
-    values.forEach((v) => {
-      if (ref - v > threshold) {
-        used += ref - v;
-        ref = v;
-      } else if (v > ref) {
+    let ref = smooth[0];
+    smooth.forEach((v) => {
+      if (Math.abs(v - ref) >= threshold) {
+        if (v < ref) used += ref - v;
         ref = v;
       }
     });
     return {
-      min: Math.min(...values),
-      max: Math.max(...values),
+      min: Math.min(...smooth),
+      max: Math.max(...smooth),
       perDay: (used / cfg.history_hours) * 24,
     };
   }
