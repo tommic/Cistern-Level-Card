@@ -67,3 +67,12 @@ Ideen für die nächste Ausbaustufe:
 - Warn-Schwellenwert (z. B. rote Einfärbung unter 15 %)
 - Trend-/Verbrauchsanzeige (Liter/Tag) über `sensor.zisterne_fuellstand` Historie
 - Mini-Graph der letzten 7 Tage unterhalb des Tanks
+
+## Versionen / Releases
+
+HACS zeigt nur dann eine Versionsnummer statt eines Commit-Hashes, wenn es ein GitHub-Release gibt.
+Neues Release erstellen:
+
+1. `CARD_VERSION` in `cistern-level-card.js` und `CHANGELOG.md` anpassen, per PR mergen
+2. Tag setzen und pushen: `git tag v1.1.0 && git push origin v1.1.0`
+3. Der Workflow `.github/workflows/release.yml` legt automatisch das Release an

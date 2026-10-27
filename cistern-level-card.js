@@ -15,7 +15,7 @@
  * show_liters: true
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.1.0";
 
 class CisternLevelCard extends HTMLElement {
   static getConfigElement() {
