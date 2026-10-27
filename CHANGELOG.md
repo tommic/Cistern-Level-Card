@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.0
+- Verbrauch (pro Tag), Reichweite in Tagen und Min/Max aus dem Verlauf der Entität
+- Neue Optionen `show_history` und `history_hours`
+
 ## 1.4.0
 - Sprache und Zahlenformat folgen den Home-Assistant-Einstellungen (Deutsch und Englisch)
 
