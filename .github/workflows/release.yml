@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Versions-Tag, z. B. v1.2.0 (wird auf dem gewählten Branch erstellt)"
+        required: true
 
 permissions:
   contents: write
@@ -16,6 +21,7 @@ jobs:
       - name: GitHub Release erstellen
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" cistern-level-card.js \
-            --title "${GITHUB_REF_NAME}" --generate-notes
+          gh release create "$TAG" cistern-level-card.js \
+            --title "$TAG" --generate-notes --target "$GITHUB_SHA"
