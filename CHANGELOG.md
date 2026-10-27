@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.0
+- Liegende Rundtanks: `tank_type: horizontal_cylinder` rechnet nach der Kreissegment-Formel und zeigt den Tank liegend
+- Beliebige Tankformen über `volume_curve` (Messpunkte cm → Liter)
+- Prozent, Liter, Skala und Verbrauch beziehen sich auf das Volumen
+
 ## 1.6.0
 - Skala (25/50/75 %) am Tank, abschaltbar mit `show_scale`
 - Größe des Tanks einstellbar (`tank_height`, `tank_width` in px)

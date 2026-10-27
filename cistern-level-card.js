@@ -15,7 +15,7 @@
  * show_liters: true
  */
 
-const CARD_VERSION = "1.6.0";
+const CARD_VERSION = "1.7.0";
 
 const HISTORY_REFRESH_MS = 10 * 60 * 1000;
 
@@ -44,6 +44,10 @@ const TRANSLATIONS = {
     "editor.show_liters": "Liter anzeigen",
     "editor.show_history": "Verbrauch und Reichweite anzeigen",
     "editor.show_scale": "Skala am Tank anzeigen",
+    "editor.tank_type": "Tankform",
+    "editor.tank_type.standing": "Stehend (Zylinder/Quader)",
+    "editor.tank_type.horizontal_cylinder": "Liegender Rundtank",
+    "editor.tank_type.hint": "Beim liegenden Rundtank wird das Volumen nach der Kreissegment-Formel berechnet. Eigene Messpunkte: volume_curve im Code-Editor.",
     "editor.tank_height": "Höhe des Tanks (px)",
     "editor.tank_width": "Breite des Tanks (px)",
     "editor.low_level_percent": "Warnung unter (%)",
@@ -77,6 +81,10 @@ const TRANSLATIONS = {
     "editor.show_liters": "Show litres",
     "editor.show_history": "Show usage and remaining days",
     "editor.show_scale": "Show scale on tank",
+    "editor.tank_type": "Tank shape",
+    "editor.tank_type.standing": "Upright (cylinder/box)",
+    "editor.tank_type.horizontal_cylinder": "Horizontal cylinder",
+    "editor.tank_type.hint": "A horizontal cylinder tank uses the circular-segment formula for volume. Custom points: volume_curve in the code editor.",
     "editor.tank_height": "Tank height (px)",
     "editor.tank_width": "Tank width (px)",
     "editor.low_level_percent": "Warn below (%)",
@@ -129,6 +137,26 @@ function formatNumber(locale, value, options) {
   }
 }
 
+// Volumenanteil (0..1) eines liegenden Rundtanks bei Füllhöhenanteil r (0..1):
+// Kreissegment-Fläche geteilt durch Kreisfläche.
+function horizontalCylinderFraction(r) {
+  const x = 1 - 2 * Math.min(Math.max(r, 0), 1);
+  return (Math.acos(x) - x * Math.sqrt(Math.max(1 - x * x, 0))) / Math.PI;
+}
+
+// volume_curve ([[cm, Liter], ...] oder [{height_cm, volume_l}, ...]) bereinigen und sortieren.
+function normalizeCurve(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((p) =>
+      Array.isArray(p)
+        ? { h: Number(p[0]), v: Number(p[1]) }
+        : { h: Number(p?.height_cm ?? p?.height), v: Number(p?.volume_l ?? p?.volume) }
+    )
+    .filter((p) => isFinite(p.h) && isFinite(p.v))
+    .sort((a, b) => a.h - b.h);
+}
+
 class CisternLevelCard extends HTMLElement {
   static getConfigElement() {
     return document.createElement("cistern-level-card-editor");
@@ -177,6 +205,15 @@ class CisternLevelCard extends HTMLElement {
         ? Number(config.low_level_percent)
         : null;
     this._config.low_level_color = config.low_level_color || "#e53935";
+    this._config.tank_type =
+      config.tank_type === "horizontal_cylinder" ? "horizontal_cylinder" : "standing";
+    if (this._config.tank_type === "horizontal_cylinder") {
+      // Liegender Tank: breiter als hoch, sofern nicht selbst festgelegt
+      if (!(Number(config.tank_width) > 0)) this._config.tank_width = 200;
+      if (!(Number(config.tank_height) > 0)) this._config.tank_height = 130;
+    }
+    const curve = normalizeCurve(config.volume_curve);
+    this._curve = curve.length >= 2 ? curve : null;
     this._lastPercent = null;
     this._history = null;
     this._historyFetchedAt = 0;
@@ -250,6 +287,7 @@ class CisternLevelCard extends HTMLElement {
           overflow: hidden;
           box-shadow: inset 0 2px 6px rgba(0,0,0,0.15);
         }
+        .tank-wrap.lying { border-radius: 999px; }
         .fill {
           position: absolute;
           left: 0;
@@ -417,6 +455,51 @@ class CisternLevelCard extends HTMLElement {
     return translate(resolveLocale(this._hass), key, vars);
   }
 
+  // Füllhöhe als Anteil (0..1) des nutzbaren Bereichs
+  _levelFraction(raw) {
+    const cfg = this._config;
+    const usable = Math.max(cfg.max_height_cm - cfg.min_height_cm, 0.0001);
+    return Math.min(Math.max(raw - cfg.min_height_cm, 0), usable) / usable;
+  }
+
+  // Volumenanteil (0..1) für einen Sensorwert: linear, liegender Rundtank oder eigene Kurve
+  _volumeFraction(raw) {
+    const cfg = this._config;
+    if (this._curve) {
+      const c = this._curve;
+      const total = c[c.length - 1].v || 1;
+      if (raw <= c[0].h) return Math.min(Math.max(c[0].v / total, 0), 1);
+      for (let i = 1; i < c.length; i++) {
+        if (raw <= c[i].h) {
+          const span = c[i].h - c[i - 1].h || 1;
+          const v = c[i - 1].v + ((raw - c[i - 1].h) / span) * (c[i].v - c[i - 1].v);
+          return Math.min(Math.max(v / total, 0), 1);
+        }
+      }
+      return 1;
+    }
+    const level = this._levelFraction(raw);
+    return cfg.tank_type === "horizontal_cylinder" ? horizontalCylinderFraction(level) : level;
+  }
+
+  // Gesamtvolumen in Litern (max_volume_l oder letzter Punkt der Kurve), sonst null
+  _totalVolume() {
+    const cfg = this._config;
+    if (cfg.max_volume_l) return cfg.max_volume_l;
+    return this._curve ? this._curve[this._curve.length - 1].v || null : null;
+  }
+
+  // Skalenbeschriftung: Volumenanteil bei 25/50/75 % der Füllhöhe
+  _renderScale() {
+    const cfg = this._config;
+    const usable = cfg.max_height_cm - cfg.min_height_cm;
+    this._els.scale.querySelectorAll(".tick").forEach((tick) => {
+      const t = Number(tick.style.getPropertyValue("--t"));
+      const pct = this._volumeFraction(cfg.min_height_cm + t * usable) * 100;
+      tick.textContent = `${Math.round(pct)} %`;
+    });
+  }
+
   // Wasserfarbe setzen; die helle Wellenfarbe wird bei Warnung immer abgeleitet.
   _applyWaterColor(color, low) {
     const cfg = this._config;
@@ -437,6 +520,7 @@ class CisternLevelCard extends HTMLElement {
     this._els.tankWrap.style.setProperty("--tank-width", `${cfg.tank_width}px`);
     this._els.tankWrap.style.setProperty("--tank-height", `${cfg.tank_height}px`);
     this._els.scale.classList.toggle("hidden", !cfg.show_scale);
+    this._els.tankWrap.classList.toggle("lying", cfg.tank_type === "horizontal_cylinder");
     this._els.card.style.setProperty("--low-color", cfg.low_level_color);
     this.shadowRoot.querySelector(".header ha-icon").style.setProperty(
       "--water-color",
@@ -473,13 +557,14 @@ class CisternLevelCard extends HTMLElement {
       this._setFillPercent(0);
       return;
     }
-    const minH = cfg.min_height_cm;
     const maxH = cfg.max_height_cm;
-    const usableHeight = Math.max(maxH - minH, 0.0001);
-    const effectiveLevel = Math.min(Math.max(rawLevel - minH, 0), usableHeight);
-    const percent = (effectiveLevel / usableHeight) * 100;
+    // Füllhöhe (Grafik) und Volumenanteil (Prozent, Liter) können sich unterscheiden
+    const levelPercent = this._levelFraction(rawLevel) * 100;
+    const percent = this._volumeFraction(rawLevel) * 100;
+    const totalVolume = this._totalVolume();
 
-    this._setFillPercent(percent);
+    this._setFillPercent(levelPercent);
+    this._renderScale();
 
     // Warnstufe: Wasser und Prozentanzeige in der Warnfarbe
     const low = cfg.low_level_percent != null && percent <= cfg.low_level_percent;
@@ -496,11 +581,11 @@ class CisternLevelCard extends HTMLElement {
       this._els.percentage.textContent = `${formatNumber(loc, rawLevel)} ${cfg.unit_source}`;
     }
 
-    if (cfg.show_liters && cfg.max_volume_l) {
-      const liters = (percent / 100) * cfg.max_volume_l;
+    if (cfg.show_liters && totalVolume) {
+      const liters = (percent / 100) * totalVolume;
       this._els.liters.textContent = this._t("liters_of", {
         liters: formatNumber(loc, liters, { maximumFractionDigits: cfg.decimals }),
-        max: formatNumber(loc, cfg.max_volume_l),
+        max: formatNumber(loc, totalVolume),
       });
     } else {
       this._els.liters.textContent = "";
@@ -551,11 +636,8 @@ class CisternLevelCard extends HTMLElement {
   // Nachfüllen) werden nicht gegengerechnet.
   _computeHistoryStats() {
     const cfg = this._config;
-    const usable = Math.max(cfg.max_height_cm - cfg.min_height_cm, 0.0001);
-    const toUnit = (raw) => {
-      const pct = Math.min(Math.max(raw - cfg.min_height_cm, 0), usable) / usable;
-      return cfg.max_volume_l ? pct * cfg.max_volume_l : pct * 100;
-    };
+    const total = this._totalVolume();
+    const toUnit = (raw) => this._volumeFraction(raw) * (total || 100);
     const HOUR = 3600 * 1000;
     const end = Date.now();
     const start = end - cfg.history_hours * HOUR;
@@ -595,7 +677,7 @@ class CisternLevelCard extends HTMLElement {
     );
 
     // Verbrauch: Abnahmen zählen, sobald sie größer als die Rauschschwelle sind
-    const range = cfg.max_volume_l || 100;
+    const range = this._totalVolume() || 100;
     const threshold = range * 0.015;
     let used = 0;
     let ref = smooth[0];
@@ -620,8 +702,9 @@ class CisternLevelCard extends HTMLElement {
       return;
     }
     const loc = resolveLocale(this._hass);
-    const unit = cfg.max_volume_l ? " L" : " %";
-    const fmt = (v) => formatNumber(loc, v, { maximumFractionDigits: cfg.max_volume_l ? cfg.decimals : 1 });
+    const total = this._totalVolume();
+    const unit = total ? " L" : " %";
+    const fmt = (v) => formatNumber(loc, v, { maximumFractionDigits: total ? cfg.decimals : 1 });
     this._els.history.style.display = "";
     this._els.historyRange.textContent = this._t("history_range", {
       hours: cfg.history_hours,
@@ -632,7 +715,7 @@ class CisternLevelCard extends HTMLElement {
       this._els.historyUsage.textContent = this._t("history_usage", {
         value: fmt(stats.perDay) + unit,
       });
-      const current = cfg.max_volume_l ? (percent / 100) * cfg.max_volume_l : percent;
+      const current = total ? (percent / 100) * total : percent;
       this._els.historyDays.textContent = this._t("history_days_left", {
         days: formatNumber(loc, current / stats.perDay, { maximumFractionDigits: 0 }),
       });
@@ -667,6 +750,12 @@ const EDITOR_FIELDS = [
   { key: "max_height_cm", type: "number", row: "heights", def: 200 },
   { key: "min_height_cm", type: "number", row: "heights", def: 0 },
   { key: "max_volume_l", type: "number", placeholder: "6000" },
+  {
+    key: "tank_type",
+    type: "select",
+    options: ["standing", "horizontal_cylinder"],
+    def: "standing",
+  },
   { key: "decimals", type: "number", row: "display", def: 0 },
   { key: "unit_source", type: "text", row: "display", def: "cm" },
   { key: "water_color", type: "color", row: "colors", def: "#1e88e5" },
@@ -720,6 +809,13 @@ class CisternLevelCardEditor extends HTMLElement {
           background: var(--card-background-color, #fff);
           color: var(--primary-text-color);
         }
+        select {
+          padding: 8px;
+          border-radius: 6px;
+          border: 1px solid var(--divider-color, #ccc);
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color);
+        }
         input[type="color"] { width: 100%; height: 36px; padding: 0; border: none; background: none; }
         .group { display: flex; gap: 12px; }
         .hint { font-size: 0.8em; color: var(--secondary-text-color); line-height: 1.3; }
@@ -760,6 +856,16 @@ class CisternLevelCardEditor extends HTMLElement {
     });
   }
 
+  _appendHint(row, field) {
+    const hintKey = `editor.${field.key}.hint`;
+    if (this._t(hintKey) !== hintKey) {
+      const hint = document.createElement("span");
+      hint.className = "hint";
+      hint.textContent = this._t(hintKey);
+      row.append(hint);
+    }
+  }
+
   _derivedLight(waterColor) {
     const light = lightenColor(waterColor || "#1e88e5");
     return /^#[0-9a-f]{6}$/i.test(light) ? light : "#4fa8f0";
@@ -774,6 +880,21 @@ class CisternLevelCardEditor extends HTMLElement {
     input.type = field.type;
     if (field.placeholder) input.placeholder = field.placeholder;
     const current = cfg[field.key];
+
+    if (field.type === "select") {
+      const select = document.createElement("select");
+      field.options.forEach((opt) => {
+        const o = document.createElement("option");
+        o.value = opt;
+        o.textContent = this._t(`editor.${field.key}.${opt}`);
+        select.appendChild(o);
+      });
+      select.value = current ?? field.def;
+      select.addEventListener("change", () => this._updateConfig(field.key, select.value));
+      row.append(label, select);
+      this._appendHint(row, field);
+      return row;
+    }
 
     if (field.type === "checkbox") {
       input.checked = current !== undefined ? current !== false : field.def !== false;
@@ -801,13 +922,7 @@ class CisternLevelCardEditor extends HTMLElement {
     });
     input.id = `field-${field.key}`;
     row.append(label, input);
-    const hintKey = `editor.${field.key}.hint`;
-    if (this._t(hintKey) !== hintKey) {
-      const hint = document.createElement("span");
-      hint.className = "hint";
-      hint.textContent = this._t(hintKey);
-      row.append(hint);
-    }
+    this._appendHint(row, field);
     return row;
   }
 
