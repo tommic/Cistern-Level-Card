@@ -31,7 +31,7 @@ min_height_cm: 0
 max_volume_l: 6000
 decimals: 0
 water_color: "#1e88e5"
-water_color_light: "#4fa8f0"
+# water_color_light: "#4fa8f0"   # optional, sonst automatisch aus water_color
 show_liters: true
 show_percentage: true
 icon: mdi:waves
@@ -45,7 +45,7 @@ icon: mdi:waves
 | `min_height_cm` | nein | 0 | Toter Raum / Sensor-Offset am Boden |
 | `max_volume_l` | nein | – | Fassungsvermögen; ohne diese Angabe wird nur % angezeigt |
 | `decimals` | nein | 0 | Nachkommastellen bei der Liter-Anzeige |
-| `water_color` / `water_color_light` | nein | Blautöne | Farbe des Wassers |
+| `water_color` / `water_color_light` | nein | Blau / automatisch heller | Wasserfarbe; die Wellenfarbe wird aus `water_color` abgeleitet, wenn nicht gesetzt |
 | `show_liters` / `show_percentage` | nein | true | Anzeige ein-/ausblenden |
 | `icon` | nein | mdi:waves | Kopfzeilen-Icon |
 
