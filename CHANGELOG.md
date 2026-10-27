@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.4.0
+- Sprache und Zahlenformat folgen den Home-Assistant-Einstellungen (Deutsch und Englisch)
+
 ## 1.3.0
 - Visueller Editor um alle Optionen erweitert (Nachkommastellen, Einheit, Wellenfarbe, Anzeige-Schalter)
 - Editor schreibt keine leeren Werte mehr in die Konfiguration
