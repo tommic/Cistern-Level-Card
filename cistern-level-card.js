@@ -15,7 +15,7 @@
  * show_liters: true
  */
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.2.0";
 
 class CisternLevelCard extends HTMLElement {
   static getConfigElement() {
@@ -93,6 +93,7 @@ class CisternLevelCard extends HTMLElement {
           display: block;
         }
         ha-card {
+          cursor: pointer;
           padding: 16px;
           display: flex;
           flex-direction: column;
@@ -253,6 +254,7 @@ class CisternLevelCard extends HTMLElement {
       unavailable: this.shadowRoot.querySelector(".unavailable"),
       tankWrap: this.shadowRoot.querySelector(".tank-wrap"),
     };
+    this._els.card.addEventListener("click", () => this._showHistory());
   }
 
   _updateContent() {
@@ -311,6 +313,17 @@ class CisternLevelCard extends HTMLElement {
     this._els.heightInfo.textContent = `Füllstand: ${rawLevel.toLocaleString("de-DE")} ${
       cfg.unit_source
     } (max. ${maxH} ${cfg.unit_source})`;
+  }
+
+  _showHistory() {
+    if (!this._config?.entity) return;
+    this.dispatchEvent(
+      new CustomEvent("hass-more-info", {
+        detail: { entityId: this._config.entity },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   _setFillPercent(percent) {
