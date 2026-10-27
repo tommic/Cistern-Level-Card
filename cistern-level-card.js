@@ -15,7 +15,9 @@
  * show_liters: true
  */
 
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.5.0";
+
+const HISTORY_REFRESH_MS = 10 * 60 * 1000;
 
 const TRANSLATIONS = {
   de: {
@@ -24,6 +26,9 @@ const TRANSLATIONS = {
     sensor_unavailable: "Sensor nicht verfügbar",
     liters_of: "{liters} L von {max} L",
     level_info: "Füllstand: {level} {unit} (max. {max} {unit})",
+    history_range: "Min / Max ({hours} h): {min} / {max}",
+    history_usage: "Verbrauch: ca. {value}/Tag",
+    history_days_left: "Reicht noch ca. {days} Tage",
     "editor.entity": "Entität (Füllstand-Sensor) *",
     "editor.name": "Name",
     "editor.max_height_cm": "Max. Höhe (cm) *",
@@ -36,6 +41,8 @@ const TRANSLATIONS = {
     "editor.icon": "Icon",
     "editor.show_percentage": "Prozent anzeigen",
     "editor.show_liters": "Liter anzeigen",
+    "editor.show_history": "Verbrauch und Reichweite anzeigen",
+    "editor.history_hours": "Zeitraum für Verbrauch (Stunden)",
   },
   en: {
     entity_required: "Please set an 'entity' (level sensor).",
@@ -43,6 +50,9 @@ const TRANSLATIONS = {
     sensor_unavailable: "Sensor unavailable",
     liters_of: "{liters} L of {max} L",
     level_info: "Level: {level} {unit} (max. {max} {unit})",
+    history_range: "Min / Max ({hours} h): {min} / {max}",
+    history_usage: "Usage: approx. {value}/day",
+    history_days_left: "Lasts approx. {days} more days",
     "editor.entity": "Entity (level sensor) *",
     "editor.name": "Name",
     "editor.max_height_cm": "Max. height (cm) *",
@@ -55,6 +65,8 @@ const TRANSLATIONS = {
     "editor.icon": "Icon",
     "editor.show_percentage": "Show percentage",
     "editor.show_liters": "Show litres",
+    "editor.show_history": "Show usage and remaining days",
+    "editor.history_hours": "Usage period (hours)",
   },
 };
 
@@ -111,11 +123,15 @@ class CisternLevelCard extends HTMLElement {
       water_color_light: config.water_color_light || "#4fa8f0",
       show_liters: config.show_liters !== false,
       show_percentage: config.show_percentage !== false,
+      show_history: config.show_history !== false,
+      history_hours: Number(config.history_hours) > 0 ? Number(config.history_hours) : 72,
       unit_source: config.unit_source || "cm",
       icon: config.icon || "mdi:waves",
       ...config,
     };
     this._lastPercent = null;
+    this._history = null;
+    this._historyFetchedAt = 0;
     if (!this._built) {
       this._buildStaticDom();
       this._built = true;
@@ -270,6 +286,10 @@ class CisternLevelCard extends HTMLElement {
           display: flex;
           flex-direction: column;
         }
+        .history {
+          gap: 2px;
+          font-size: 0.9em;
+        }
         .unavailable {
           color: var(--error-color, #db4437);
           font-size: 0.9em;
@@ -299,6 +319,11 @@ class CisternLevelCard extends HTMLElement {
             <div class="stat-row">
               <span class="stat-sub height-info"></span>
             </div>
+            <div class="stat-row history" style="display:none;">
+              <span class="stat-sub history-range"></span>
+              <span class="stat-sub history-usage"></span>
+              <span class="stat-sub history-days"></span>
+            </div>
             <div class="unavailable" style="display:none;"></div>
           </div>
         </div>
@@ -313,6 +338,10 @@ class CisternLevelCard extends HTMLElement {
       percentage: this.shadowRoot.querySelector(".percentage"),
       liters: this.shadowRoot.querySelector(".liters"),
       heightInfo: this.shadowRoot.querySelector(".height-info"),
+      history: this.shadowRoot.querySelector(".history"),
+      historyRange: this.shadowRoot.querySelector(".history-range"),
+      historyUsage: this.shadowRoot.querySelector(".history-usage"),
+      historyDays: this.shadowRoot.querySelector(".history-days"),
       unavailable: this.shadowRoot.querySelector(".unavailable"),
       tankWrap: this.shadowRoot.querySelector(".tank-wrap"),
     };
@@ -345,6 +374,7 @@ class CisternLevelCard extends HTMLElement {
       this._els.percentage.textContent = "–";
       this._els.liters.textContent = "";
       this._els.heightInfo.textContent = "";
+      this._els.history.style.display = "none";
       this._setFillPercent(0);
       return;
     }
@@ -352,6 +382,16 @@ class CisternLevelCard extends HTMLElement {
 
     const loc = resolveLocale(this._hass);
     const rawLevel = parseFloat(stateObj.state);
+    if (isNaN(rawLevel)) {
+      this._els.unavailable.style.display = "block";
+      this._els.unavailable.textContent = this._t("sensor_unavailable");
+      this._els.percentage.textContent = "–";
+      this._els.liters.textContent = "";
+      this._els.heightInfo.textContent = "";
+      this._els.history.style.display = "none";
+      this._setFillPercent(0);
+      return;
+    }
     const minH = cfg.min_height_cm;
     const maxH = cfg.max_height_cm;
     const usableHeight = Math.max(maxH - minH, 0.0001);
@@ -383,6 +423,101 @@ class CisternLevelCard extends HTMLElement {
       max: formatNumber(loc, maxH),
       unit: cfg.unit_source,
     });
+
+    this._maybeFetchHistory();
+    this._renderHistory(percent);
+  }
+
+  // Verlauf der letzten Stunden holen (höchstens alle 10 Minuten).
+  async _maybeFetchHistory() {
+    const cfg = this._config;
+    if (!cfg.show_history || this._historyLoading || !this._hass?.callWS) return;
+    if (Date.now() - this._historyFetchedAt < HISTORY_REFRESH_MS) return;
+    this._historyLoading = true;
+    this._historyFetchedAt = Date.now();
+    try {
+      const end = new Date();
+      const start = new Date(end.getTime() - cfg.history_hours * 3600 * 1000);
+      const result = await this._hass.callWS({
+        type: "history/history_during_period",
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        entity_ids: [cfg.entity],
+        minimal_response: true,
+        no_attributes: true,
+        significant_changes_only: false,
+      });
+      this._history = result?.[cfg.entity] || [];
+    } catch (e) {
+      this._history = null;
+    } finally {
+      this._historyLoading = false;
+    }
+    this._updateContent();
+  }
+
+  // Füllstand in Liter (bzw. Prozent ohne Volumen) aus den Verlaufspunkten.
+  _computeHistoryStats() {
+    const cfg = this._config;
+    const usable = Math.max(cfg.max_height_cm - cfg.min_height_cm, 0.0001);
+    const toUnit = (raw) => {
+      const pct = Math.min(Math.max(raw - cfg.min_height_cm, 0), usable) / usable;
+      return cfg.max_volume_l ? pct * cfg.max_volume_l : pct * 100;
+    };
+    const values = (this._history || [])
+      .map((e) => parseFloat(e.s ?? e.state))
+      .filter((v) => !isNaN(v))
+      .map(toUnit);
+    if (values.length < 2) return null;
+    // Rauschen unterdrücken: Verbrauch nur aus Abnahmen über einer kleinen Schwelle,
+    // Zuflüsse (Regen, Nachfüllen) werden nicht gegengerechnet.
+    const range = cfg.max_volume_l || 100;
+    const threshold = range * 0.002;
+    let used = 0;
+    let ref = values[0];
+    values.forEach((v) => {
+      if (ref - v > threshold) {
+        used += ref - v;
+        ref = v;
+      } else if (v > ref) {
+        ref = v;
+      }
+    });
+    return {
+      min: Math.min(...values),
+      max: Math.max(...values),
+      perDay: (used / cfg.history_hours) * 24,
+    };
+  }
+
+  _renderHistory(percent) {
+    const cfg = this._config;
+    const stats = cfg.show_history && this._history ? this._computeHistoryStats() : null;
+    if (!stats) {
+      this._els.history.style.display = "none";
+      return;
+    }
+    const loc = resolveLocale(this._hass);
+    const unit = cfg.max_volume_l ? " L" : " %";
+    const fmt = (v) => formatNumber(loc, v, { maximumFractionDigits: cfg.max_volume_l ? cfg.decimals : 1 });
+    this._els.history.style.display = "";
+    this._els.historyRange.textContent = this._t("history_range", {
+      hours: cfg.history_hours,
+      min: fmt(stats.min) + unit,
+      max: fmt(stats.max) + unit,
+    });
+    if (stats.perDay > 0) {
+      this._els.historyUsage.textContent = this._t("history_usage", {
+        value: fmt(stats.perDay) + unit,
+      });
+      const current = cfg.max_volume_l ? (percent / 100) * cfg.max_volume_l : percent;
+      this._els.historyDays.textContent = this._t("history_days_left", {
+        days: formatNumber(loc, current / stats.perDay, { maximumFractionDigits: 0 }),
+      });
+    } else {
+      this._els.historyUsage.textContent = "";
+      this._els.historyDays.textContent = "";
+    }
   }
 
   _showHistory() {
@@ -417,6 +552,8 @@ const EDITOR_FIELDS = [
   { key: "icon", type: "text", def: "mdi:waves" },
   { key: "show_percentage", type: "checkbox", def: true },
   { key: "show_liters", type: "checkbox", def: true },
+  { key: "show_history", type: "checkbox", def: true },
+  { key: "history_hours", type: "number", def: 72 },
 ];
 
 class CisternLevelCardEditor extends HTMLElement {
