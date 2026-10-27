@@ -15,7 +15,7 @@
  * show_liters: true
  */
 
-const CARD_VERSION = "1.2.0";
+const CARD_VERSION = "1.3.0";
 
 class CisternLevelCard extends HTMLElement {
   static getConfigElement() {
@@ -337,6 +337,20 @@ class CisternLevelCard extends HTMLElement {
   }
 }
 
+const EDITOR_FIELDS = [
+  { key: "name", label: "Name", type: "text", placeholder: "Zisterne" },
+  { key: "max_height_cm", label: "Max. Höhe (cm) *", type: "number", row: "heights", def: 200 },
+  { key: "min_height_cm", label: "Min./Totpunkt Höhe (cm)", type: "number", row: "heights", def: 0 },
+  { key: "max_volume_l", label: "Max. Volumen (Liter)", type: "number", placeholder: "6000" },
+  { key: "decimals", label: "Nachkommastellen (Liter)", type: "number", row: "display", def: 0 },
+  { key: "unit_source", label: "Einheit des Sensors", type: "text", row: "display", def: "cm" },
+  { key: "water_color", label: "Wasserfarbe", type: "color", row: "colors", def: "#1e88e5" },
+  { key: "water_color_light", label: "Wellenfarbe (hell)", type: "color", row: "colors", def: "#4fa8f0" },
+  { key: "icon", label: "Icon", type: "text", def: "mdi:waves" },
+  { key: "show_percentage", label: "Prozent anzeigen", type: "checkbox", def: true },
+  { key: "show_liters", label: "Liter anzeigen", type: "checkbox", def: true },
+];
+
 class CisternLevelCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = { ...config };
@@ -357,52 +371,25 @@ class CisternLevelCardEditor extends HTMLElement {
     const cfg = this._config || {};
     this.shadowRoot.innerHTML = `
       <style>
-        .row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+        .row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; flex: 1; }
         label { font-size: 0.9em; color: var(--secondary-text-color); }
-        input {
+        input[type="text"], input[type="number"] {
           padding: 8px;
           border-radius: 6px;
           border: 1px solid var(--divider-color, #ccc);
           background: var(--card-background-color, #fff);
           color: var(--primary-text-color);
         }
-        .two-col { display: flex; gap: 12px; }
-        .two-col .row { flex: 1; }
+        input[type="color"] { width: 100%; height: 36px; padding: 0; border: none; background: none; }
+        .group { display: flex; gap: 12px; }
         .checkbox-row { flex-direction: row; align-items: center; gap: 8px; }
       </style>
       <div class="editor">
         <div class="row">
-          <label>Entität (Füllstand-Sensor in cm) *</label>
+          <label>Entität (Füllstand-Sensor) *</label>
           <ha-entity-picker id="entity"></ha-entity-picker>
         </div>
-        <div class="row">
-          <label>Name</label>
-          <input id="name" type="text" value="${cfg.name || ""}" placeholder="Zisterne" />
-        </div>
-        <div class="two-col">
-          <div class="row">
-            <label>Max. Höhe (cm) *</label>
-            <input id="max_height_cm" type="number" value="${cfg.max_height_cm ?? 200}" />
-          </div>
-          <div class="row">
-            <label>Min./Totpunkt Höhe (cm)</label>
-            <input id="min_height_cm" type="number" value="${cfg.min_height_cm ?? 0}" />
-          </div>
-        </div>
-        <div class="row">
-          <label>Max. Volumen (Liter)</label>
-          <input id="max_volume_l" type="number" value="${cfg.max_volume_l ?? ""}" placeholder="6000" />
-        </div>
-        <div class="two-col">
-          <div class="row">
-            <label>Wasserfarbe</label>
-            <input id="water_color" type="color" value="${cfg.water_color || "#1e88e5"}" />
-          </div>
-          <div class="row">
-            <label>Icon</label>
-            <input id="icon" type="text" value="${cfg.icon || "mdi:waves"}" />
-          </div>
-        </div>
+        <div id="fields"></div>
       </div>
     `;
 
@@ -414,25 +401,64 @@ class CisternLevelCardEditor extends HTMLElement {
       this._updateConfig("entity", e.detail.value);
     });
 
-    ["name", "max_height_cm", "min_height_cm", "max_volume_l", "water_color", "icon"].forEach(
-      (id) => {
-        const el = this.shadowRoot.getElementById(id);
-        el.addEventListener("change", (e) => {
-          let value = e.target.value;
-          if (["max_height_cm", "min_height_cm", "max_volume_l"].includes(id)) {
-            value = value === "" ? undefined : Number(value);
-          }
-          this._updateConfig(id, value);
-        });
+    // Felder per DOM aufbauen (nicht per innerHTML), damit Werte mit
+    // Anführungszeichen o. ä. die Eingabe nicht zerstören.
+    const container = this.shadowRoot.getElementById("fields");
+    const groups = {};
+    EDITOR_FIELDS.forEach((field) => {
+      let parent = container;
+      if (field.row) {
+        if (!groups[field.row]) {
+          groups[field.row] = document.createElement("div");
+          groups[field.row].className = "group";
+          container.appendChild(groups[field.row]);
+        }
+        parent = groups[field.row];
       }
-    );
+      parent.appendChild(this._buildField(field, cfg));
+    });
+  }
+
+  _buildField(field, cfg) {
+    const row = document.createElement("div");
+    row.className = "row" + (field.type === "checkbox" ? " checkbox-row" : "");
+    const label = document.createElement("label");
+    label.textContent = field.label;
+    const input = document.createElement("input");
+    input.type = field.type;
+    if (field.placeholder) input.placeholder = field.placeholder;
+    const current = cfg[field.key];
+
+    if (field.type === "checkbox") {
+      input.checked = current !== undefined ? current !== false : field.def !== false;
+      input.addEventListener("change", () => this._updateConfig(field.key, input.checked));
+      row.append(input, label);
+      return row;
+    }
+
+    input.value = current ?? field.def ?? "";
+    input.addEventListener("change", () => {
+      let value = input.value;
+      if (field.type === "number") {
+        value = value === "" ? undefined : Number(value);
+      }
+      this._updateConfig(field.key, value);
+    });
+    row.append(label, input);
+    return row;
   }
 
   _updateConfig(key, value) {
-    this._config = { ...this._config, [key]: value };
+    const config = { ...this._config };
+    if (value === undefined || value === "") {
+      delete config[key];
+    } else {
+      config[key] = value;
+    }
+    this._config = config;
     this.dispatchEvent(
       new CustomEvent("config-changed", {
-        detail: { config: this._config },
+        detail: { config },
         bubbles: true,
         composed: true,
       })

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0
+- Visueller Editor um alle Optionen erweitert (Nachkommastellen, Einheit, Wellenfarbe, Anzeige-Schalter)
+- Editor schreibt keine leeren Werte mehr in die Konfiguration
+
 ## 1.2.0
 - Klick auf die Karte öffnet den Verlauf der Entität (More-Info-Dialog)
 
