@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.5.2
+- Verbrauch und Reichweite: Messrauschen des Sensors wird nicht mehr als Verbrauch gezählt (Stundenwerte per Median, Schwelle für Abnahmen)
+
 ## 1.5.1
 - Wellenfarbe wird automatisch aus der Wasserfarbe abgeleitet, solange keine eigene gesetzt ist (vorher blieb sie blau)
 
