@@ -34,6 +34,7 @@ water_color: "#1e88e5"
 # water_color_light: "#4fa8f0"   # optional, sonst automatisch aus water_color
 show_liters: true
 show_percentage: true
+tank_type: standing
 show_scale: true
 tank_height: 200
 tank_width: 96
@@ -52,29 +53,47 @@ icon: mdi:waves
 | `decimals` | nein | 0 | Nachkommastellen bei der Liter-Anzeige |
 | `water_color` / `water_color_light` | nein | Blau / automatisch heller | Wasserfarbe; die Wellenfarbe wird aus `water_color` abgeleitet, wenn nicht gesetzt |
 | `show_liters` / `show_percentage` | nein | true | Anzeige ein-/ausblenden |
+| `tank_type` | nein | standing | `standing` oder `horizontal_cylinder` (liegender Rundtank) |
+| `volume_curve` | nein | – | Liste von `[cm, Liter]`-Punkten für beliebige Tankformen |
 | `show_scale` | nein | true | Skala (25/50/75 %) am Tank anzeigen |
 | `tank_height` / `tank_width` | nein | 200 / 96 | Größe des Tanks in Pixel |
 | `low_level_percent` | nein | – | Unterhalb dieses Füllstands (%) wird gewarnt: Wasser und Prozentanzeige in `low_level_color`, dazu der Text "Füllstand niedrig" |
 | `low_level_color` | nein | #e53935 | Warnfarbe |
 | `icon` | nein | mdi:waves | Kopfzeilen-Icon |
 
-## Wichtiger Hinweis zur Liter-Berechnung
+## Tankform und Liter-Berechnung
 
-Die aktuelle Version rechnet **linear**: `Liter = (Füllstand / max_height_cm) × max_volume_l`.
-Das ist exakt korrekt bei stehenden zylindrischen oder quaderförmigen Tanks.
+Standardmäßig rechnet die Karte **linear**: `Liter = (Füllstand / max_height_cm) × max_volume_l`.
+Das passt bei stehenden zylindrischen oder quaderförmigen Tanks.
 
-Bei einem **liegenden Rundtank** (häufige Bauform bei erdverlegten Zisternen)
-ist der Zusammenhang zwischen Höhe und Volumen **nicht linear** (Kreissegment-Formel).
-Für diesen Fall kann eine `volume_curve`-Option ergänzt werden, die den Tank in
-Höhen-Stützstellen mit zugehörigem Volumen beschreibt – sag Bescheid, falls das
-für dich relevant ist, dann bauen wir das nach.
+**Liegender Rundtank** (z. B. erdverlegte Zisterne): Hier ist der Zusammenhang zwischen Höhe und Volumen nicht linear.
 
-## Änderungen / Weiterentwicklung
+```yaml
+tank_type: horizontal_cylinder
+max_height_cm: 150      # Innendurchmesser des Tanks
+max_volume_l: 6000
+```
 
-Ideen für die nächste Ausbaustufe:
-- Nicht-lineare Volumenkurve für liegende Rundtanks
-- Warn-Schwellenwert (z. B. rote Einfärbung unter 15 %)
-- Trend-/Verbrauchsanzeige (Liter/Tag) über `sensor.zisterne_fuellstand` Historie
+Die Karte rechnet dann nach der Kreissegment-Formel und zeigt den Tank liegend (breiter als hoch,
+Größe über `tank_width` / `tank_height` änderbar). Die Prozent- und Literangaben (und die Skala) beziehen
+sich auf das **Volumen**, die Füllhöhe in der Grafik auf die Höhe.
+
+**Beliebige Tankform** über eine Volumenkurve aus Messpunkten (Sensorwert in cm → Liter), z. B. aus einer Peiltabelle:
+
+```yaml
+volume_curve:
+  - [0, 0]
+  - [50, 300]
+  - [100, 2000]
+  - [200, 6000]
+```
+
+Zwischen den Punkten wird linear interpoliert, das Gesamtvolumen ist der letzte Punkt
+(oder `max_volume_l`, falls gesetzt). Werte können auch als `{height_cm: 50, volume_l: 300}` angegeben werden.
+`volume_curve` hat Vorrang vor `tank_type`.
+
+## Ideen für die Weiterentwicklung
+
 - Mini-Graph der letzten 7 Tage unterhalb des Tanks
 
 ## Versionen / Releases
