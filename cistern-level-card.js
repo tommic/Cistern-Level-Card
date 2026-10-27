@@ -15,7 +15,7 @@
  * show_liters: true
  */
 
-const CARD_VERSION = "1.5.3";
+const CARD_VERSION = "1.6.0";
 
 const HISTORY_REFRESH_MS = 10 * 60 * 1000;
 
@@ -26,6 +26,7 @@ const TRANSLATIONS = {
     sensor_unavailable: "Sensor nicht verfügbar",
     liters_of: "{liters} L von {max} L",
     level_info: "Füllstand: {level} {unit} (max. {max} {unit})",
+    low_level: "Füllstand niedrig",
     history_range: "Min / Max ({hours} h): {min} / {max}",
     history_usage: "Verbrauch: ca. {value}/Tag",
     history_days_left: "Reicht noch ca. {days} Tage",
@@ -42,6 +43,12 @@ const TRANSLATIONS = {
     "editor.show_percentage": "Prozent anzeigen",
     "editor.show_liters": "Liter anzeigen",
     "editor.show_history": "Verbrauch und Reichweite anzeigen",
+    "editor.show_scale": "Skala am Tank anzeigen",
+    "editor.tank_height": "Höhe des Tanks (px)",
+    "editor.tank_width": "Breite des Tanks (px)",
+    "editor.low_level_percent": "Warnung unter (%)",
+    "editor.low_level_percent.hint": "Unter diesem Füllstand wird das Wasser in der Warnfarbe angezeigt. Leer = keine Warnung.",
+    "editor.low_level_color": "Warnfarbe",
     "editor.history_hours": "Rückblick für Verbrauch (Stunden)",
     "editor.history_hours.hint":
       "So weit schaut die Karte zurück, um Verbrauch, Reichweite und Min/Max zu berechnen. 72 = die letzten 3 Tage. Länger = ruhigerer Wert, kürzer = reagiert schneller.",
@@ -52,6 +59,7 @@ const TRANSLATIONS = {
     sensor_unavailable: "Sensor unavailable",
     liters_of: "{liters} L of {max} L",
     level_info: "Level: {level} {unit} (max. {max} {unit})",
+    low_level: "Low level",
     history_range: "Min / Max ({hours} h): {min} / {max}",
     history_usage: "Usage: approx. {value}/day",
     history_days_left: "Lasts approx. {days} more days",
@@ -68,6 +76,12 @@ const TRANSLATIONS = {
     "editor.show_percentage": "Show percentage",
     "editor.show_liters": "Show litres",
     "editor.show_history": "Show usage and remaining days",
+    "editor.show_scale": "Show scale on tank",
+    "editor.tank_height": "Tank height (px)",
+    "editor.tank_width": "Tank width (px)",
+    "editor.low_level_percent": "Warn below (%)",
+    "editor.low_level_percent.hint": "Below this level the water is shown in the warning colour. Empty = no warning.",
+    "editor.low_level_color": "Warning colour",
     "editor.history_hours": "Look-back for usage (hours)",
     "editor.history_hours.hint":
       "How far back the card looks to calculate usage, remaining days and min/max. 72 = the last 3 days. Longer = steadier value, shorter = reacts faster.",
@@ -154,6 +168,15 @@ class CisternLevelCard extends HTMLElement {
       icon: config.icon || "mdi:waves",
       ...config,
     };
+    // Normalisierte Werte (müssen nach ...config stehen, damit ungültige Eingaben nicht überschreiben)
+    this._config.tank_height = Number(config.tank_height) > 0 ? Number(config.tank_height) : 200;
+    this._config.tank_width = Number(config.tank_width) > 0 ? Number(config.tank_width) : 96;
+    this._config.show_scale = config.show_scale !== false;
+    this._config.low_level_percent =
+      config.low_level_percent != null && config.low_level_percent !== ""
+        ? Number(config.low_level_percent)
+        : null;
+    this._config.low_level_color = config.low_level_color || "#e53935";
     this._lastPercent = null;
     this._history = null;
     this._historyFetchedAt = 0;
@@ -218,9 +241,9 @@ class CisternLevelCard extends HTMLElement {
         }
         .tank-wrap {
           position: relative;
-          width: 96px;
-          min-width: 96px;
-          height: 200px;
+          width: var(--tank-width, 96px);
+          min-width: var(--tank-width, 96px);
+          height: var(--tank-height, 200px);
           border-radius: 14px;
           border: 3px solid var(--divider-color, #8888);
           background: var(--card-background-color, #fff1);
@@ -277,18 +300,28 @@ class CisternLevelCard extends HTMLElement {
         }
         .scale {
           position: absolute;
-          right: 4px;
-          top: 6px;
-          bottom: 6px;
-          width: 1px;
-          background: transparent;
+          inset: 0;
+          pointer-events: none;
         }
+        .scale.hidden { display: none; }
         .tick {
           position: absolute;
-          right: 0;
-          width: 6px;
-          height: 1px;
-          background: var(--divider-color, #8886);
+          right: 4px;
+          padding: 1px 4px;
+          border-radius: 4px;
+          font-size: 0.65em;
+          line-height: 1.2;
+          color: #fff;
+          background: rgba(0, 0, 0, 0.4);
+          /* Position wie die Füllhöhe: Platz für die Welle oben abziehen */
+          bottom: calc((100% - 11px) * var(--t));
+          transform: translateY(50%);
+        }
+        .low .stat-main { color: var(--low-color); }
+        .low-hint {
+          color: var(--low-color);
+          font-size: 0.9em;
+          font-weight: 500;
         }
         .stats {
           display: flex;
@@ -334,7 +367,11 @@ class CisternLevelCard extends HTMLElement {
                 <svg class="wave" viewBox="0 0 192 12" preserveAspectRatio="none"><path d="M0 6 Q24 12 48 6 T96 6 T144 6 T192 6 V12 H0 Z"/></svg>
               </div>
             </div>
-            <div class="scale"></div>
+            <div class="scale">
+              <span class="tick" style="--t:0.75">75 %</span>
+              <span class="tick" style="--t:0.5">50 %</span>
+              <span class="tick" style="--t:0.25">25 %</span>
+            </div>
           </div>
           <div class="stats">
             <div class="stat-row">
@@ -349,6 +386,7 @@ class CisternLevelCard extends HTMLElement {
               <span class="stat-sub history-usage"></span>
               <span class="stat-sub history-days"></span>
             </div>
+            <div class="low-hint" style="display:none;"></div>
             <div class="unavailable" style="display:none;"></div>
           </div>
         </div>
@@ -368,6 +406,8 @@ class CisternLevelCard extends HTMLElement {
       historyUsage: this.shadowRoot.querySelector(".history-usage"),
       historyDays: this.shadowRoot.querySelector(".history-days"),
       unavailable: this.shadowRoot.querySelector(".unavailable"),
+      lowHint: this.shadowRoot.querySelector(".low-hint"),
+      scale: this.shadowRoot.querySelector(".scale"),
       tankWrap: this.shadowRoot.querySelector(".tank-wrap"),
     };
     this._els.card.addEventListener("click", () => this._showHistory());
@@ -377,6 +417,16 @@ class CisternLevelCard extends HTMLElement {
     return translate(resolveLocale(this._hass), key, vars);
   }
 
+  // Wasserfarbe setzen; die helle Wellenfarbe wird bei Warnung immer abgeleitet.
+  _applyWaterColor(color, low) {
+    const cfg = this._config;
+    this._els.tankWrap.style.setProperty("--water-color", color);
+    this._els.tankWrap.style.setProperty(
+      "--water-color-light",
+      !low && cfg.water_color_light ? cfg.water_color_light : lightenColor(color)
+    );
+  }
+
   _updateContent() {
     if (!this._config || !this._hass || !this._els) return;
     const cfg = this._config;
@@ -384,15 +434,18 @@ class CisternLevelCard extends HTMLElement {
 
     this._els.icon.setAttribute("icon", cfg.icon);
     this._els.name.textContent = cfg.name || stateObj?.attributes?.friendly_name || cfg.entity;
-    this._els.tankWrap.style.setProperty("--water-color", cfg.water_color);
-    this._els.tankWrap.style.setProperty(
-      "--water-color-light",
-      cfg.water_color_light || lightenColor(cfg.water_color)
-    );
+    this._els.tankWrap.style.setProperty("--tank-width", `${cfg.tank_width}px`);
+    this._els.tankWrap.style.setProperty("--tank-height", `${cfg.tank_height}px`);
+    this._els.scale.classList.toggle("hidden", !cfg.show_scale);
+    this._els.card.style.setProperty("--low-color", cfg.low_level_color);
     this.shadowRoot.querySelector(".header ha-icon").style.setProperty(
       "--water-color",
       cfg.water_color
     );
+
+    this._applyWaterColor(cfg.water_color, false);
+    this._els.card.classList.remove("low");
+    this._els.lowHint.style.display = "none";
 
     if (!stateObj || stateObj.state === "unavailable" || stateObj.state === "unknown") {
       this._els.unavailable.style.display = "block";
@@ -427,6 +480,13 @@ class CisternLevelCard extends HTMLElement {
     const percent = (effectiveLevel / usableHeight) * 100;
 
     this._setFillPercent(percent);
+
+    // Warnstufe: Wasser und Prozentanzeige in der Warnfarbe
+    const low = cfg.low_level_percent != null && percent <= cfg.low_level_percent;
+    this._els.card.classList.toggle("low", low);
+    this._els.lowHint.style.display = low ? "" : "none";
+    this._els.lowHint.textContent = low ? this._t("low_level") : "";
+    this._applyWaterColor(low ? cfg.low_level_color : cfg.water_color, low);
 
     if (cfg.show_percentage) {
       this._els.percentage.textContent = `${formatNumber(loc, percent, {
@@ -611,9 +671,14 @@ const EDITOR_FIELDS = [
   { key: "unit_source", type: "text", row: "display", def: "cm" },
   { key: "water_color", type: "color", row: "colors", def: "#1e88e5" },
   { key: "water_color_light", type: "color", row: "colors" },
+  { key: "tank_height", type: "number", row: "size", def: 200 },
+  { key: "tank_width", type: "number", row: "size", def: 96 },
+  { key: "low_level_percent", type: "number", row: "low", placeholder: "15" },
+  { key: "low_level_color", type: "color", row: "low", def: "#e53935" },
   { key: "icon", type: "text", def: "mdi:waves" },
   { key: "show_percentage", type: "checkbox", def: true },
   { key: "show_liters", type: "checkbox", def: true },
+  { key: "show_scale", type: "checkbox", def: true },
   { key: "show_history", type: "checkbox", def: true },
   { key: "history_hours", type: "number", def: 72 },
 ];
