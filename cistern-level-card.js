@@ -15,7 +15,7 @@
  * show_liters: true
  */
 
-const CARD_VERSION = "1.5.2";
+const CARD_VERSION = "1.5.3";
 
 const HISTORY_REFRESH_MS = 10 * 60 * 1000;
 
@@ -42,7 +42,9 @@ const TRANSLATIONS = {
     "editor.show_percentage": "Prozent anzeigen",
     "editor.show_liters": "Liter anzeigen",
     "editor.show_history": "Verbrauch und Reichweite anzeigen",
-    "editor.history_hours": "Zeitraum für Verbrauch (Stunden)",
+    "editor.history_hours": "Rückblick für Verbrauch (Stunden)",
+    "editor.history_hours.hint":
+      "So weit schaut die Karte zurück, um Verbrauch, Reichweite und Min/Max zu berechnen. 72 = die letzten 3 Tage. Länger = ruhigerer Wert, kürzer = reagiert schneller.",
   },
   en: {
     entity_required: "Please set an 'entity' (level sensor).",
@@ -66,7 +68,9 @@ const TRANSLATIONS = {
     "editor.show_percentage": "Show percentage",
     "editor.show_liters": "Show litres",
     "editor.show_history": "Show usage and remaining days",
-    "editor.history_hours": "Usage period (hours)",
+    "editor.history_hours": "Look-back for usage (hours)",
+    "editor.history_hours.hint":
+      "How far back the card looks to calculate usage, remaining days and min/max. 72 = the last 3 days. Longer = steadier value, shorter = reacts faster.",
   },
 };
 
@@ -653,6 +657,7 @@ class CisternLevelCardEditor extends HTMLElement {
         }
         input[type="color"] { width: 100%; height: 36px; padding: 0; border: none; background: none; }
         .group { display: flex; gap: 12px; }
+        .hint { font-size: 0.8em; color: var(--secondary-text-color); line-height: 1.3; }
         .checkbox-row { flex-direction: row; align-items: center; gap: 8px; }
       </style>
       <div class="editor">
@@ -731,6 +736,13 @@ class CisternLevelCardEditor extends HTMLElement {
     });
     input.id = `field-${field.key}`;
     row.append(label, input);
+    const hintKey = `editor.${field.key}.hint`;
+    if (this._t(hintKey) !== hintKey) {
+      const hint = document.createElement("span");
+      hint.className = "hint";
+      hint.textContent = this._t(hintKey);
+      row.append(hint);
+    }
     return row;
   }
 
