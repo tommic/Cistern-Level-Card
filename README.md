@@ -71,10 +71,10 @@ Ideen für die nächste Ausbaustufe:
 ## Versionen / Releases
 
 HACS zeigt nur dann eine Versionsnummer statt eines Commit-Hashes, wenn es ein GitHub-Release gibt.
-Neues Release erstellen:
+Das Release entsteht automatisch:
 
-1. `CARD_VERSION` in `cistern-level-card.js` und `CHANGELOG.md` anpassen, per PR mergen
-2. Release erstellen, entweder
-   - in GitHub unter **Actions → Release → Run workflow** den Tag (z. B. `v1.2.0`) eingeben, oder
-   - per Git: `git tag v1.2.0 && git push origin v1.2.0`
-3. Der Workflow `.github/workflows/release.yml` legt das Release inklusive `cistern-level-card.js` an
+1. `CARD_VERSION` in `cistern-level-card.js` und `CHANGELOG.md` anpassen, per PR nach `main` mergen
+2. Der Workflow `.github/workflows/release.yml` legt für die neue Version das Release `v<CARD_VERSION>` an
+   (inklusive `cistern-level-card.js`). Existiert es schon, passiert nichts.
+
+Manuell: unter **Actions → Release → Run workflow** starten (Tag optional) oder `git tag v1.5.2 && git push origin v1.5.2`.
