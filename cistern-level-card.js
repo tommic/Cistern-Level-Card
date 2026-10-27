@@ -131,7 +131,9 @@ class CisternLevelCard extends HTMLElement {
           left: 0;
           right: 0;
           bottom: 0;
-          height: 0%;
+          /* Platz für die Welle lassen, damit sie bei 100 % am oberen Rand endet */
+          --p: 0;
+          height: calc((100% - 11px) * var(--p));
           transition: height 1.2s ease-in-out;
         }
         .fill.empty .waves { display: none; }
@@ -330,7 +332,7 @@ class CisternLevelCard extends HTMLElement {
     const clamped = Math.min(Math.max(percent, 0), 100);
     if (this._lastPercent === clamped) return;
     this._lastPercent = clamped;
-    this._els.fill.style.height = `${clamped}%`;
+    this._els.fill.style.setProperty("--p", clamped / 100);
     this._els.fill.classList.toggle("empty", clamped <= 0);
   }
 }
